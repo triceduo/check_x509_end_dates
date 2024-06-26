@@ -4,7 +4,7 @@ from tlsx509check import check_host, check_tls_response
 
 class MyTestCase(unittest.TestCase):
 
-    def test_main(self):
+    def test_duo_com(self):
         list = [
                 'TLS_RSA_WITH_3DES_EDE_CBC_SHA',
                 'TLS_RSA_WITH_AES_128_CBC_SHA',

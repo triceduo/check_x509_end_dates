@@ -39,6 +39,21 @@ def fetch_json_from_url(url: str) -> dict:
 
 
 def cipher_suites_by_tls_version_security():
+    """
+    Check the support of various TLS versions and cipher suites for a given host.
+
+    Args:
+        hostname (str): The hostname of the server to check.
+        cipherinfo (dict, optional): A dictionary containing information about the supported cipher suites for each TLS version.
+            If not provided, the function will fetch the information from the cipher_suites_by_tls_version_security() function.
+        min_tls_version (float, optional): The minimum TLS version to check. Defaults to 1.2.
+        tls_versions (list, optional): A list of TLS versions to check. If not provided, the function will check all available TLS versions.
+        target_security_type (str, optional): The target security type to check. Defaults to 'unacceptable' (i.e. weak or insecure cipher suites).
+        ciphersuitelist (list, optional): A list of cipher suites to check. If not provided, all cipher suites will be checked.
+
+    Returns:
+        dict: A dictionary containing the results of the check. The keys are the TLS versions and the values are lists of problem cipher suites
+    """
     ciphersuites = fetch_json_from_url('https://ciphersuite.info/api/cs')
     tls_versions = {}
     for row in ciphersuites['ciphersuites']:
@@ -84,6 +99,18 @@ def check_host(hostname, cipherinfo=None, min_tls_version=1.2, tls_versions=None
 
 
 def check_tls_response(host, port, tls_version, cipher_suite=None):
+    """
+    Check the TLS response of a host by connecting to it using openssl s_client.
+
+    Parameters:
+    - host (str): The host to connect to.
+    - port (int): The port to connect to on the host.
+    - tls_version (float): The TLS version to use for the connection.
+    - cipher_suite (str, optional): The cipher suite to use for the connection. Defaults to None.
+
+    Returns:
+    - bool: True if the TLS response is successful, i.e. that TLS version or TLS version and ciphersuite is supported) by the host, False otherwise.
+    """
     tls_version_str = str(tls_version).replace(".", "_").replace('1_0', '1')
     command = ['openssl', 's_client', '-connect', f'{host}:{port}', f"-tls{tls_version_str}"]
     if cipher_suite is not None:
