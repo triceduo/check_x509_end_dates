@@ -23,10 +23,10 @@ class MyTestCase(unittest.TestCase):
         report = check_host('www.duo.com', min_tls_version=1.2,
                    tls_versions=[1.0, 1.1, 1.2],
                    target_security_type='unacceptable', ciphersuitelist=list)
-        for tls_version, rows in report.items():
-            print(tls_version)
-            print(end=' ')
-            print("\n ".join(rows))
+
+        self.assertFalse('TLS1.0'in report)
+        self.assertTrue('TLS1.2'in report)
+        self.assertTrue('weak cipher suite TLS_RSA_WITH_AES_128_CBC_SHA' in report['TLS1.2'])
 
 
 if __name__ == '__main__':
