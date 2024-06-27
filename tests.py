@@ -41,16 +41,9 @@ class MyTestCase(unittest.TestCase):
                 'TLS_RSA_WITH_AES_256_CBC_SHA',
                 'TLS_RSA_WITH_AES_256_CBC_SHA256',
                 ]
-        main(['duo.com', '--ciphersuitelist', ",".join(list), '--unacceptable', '--tls_versions', '1.2', '-V'])
-        # report = check_host('www.duo.com', min_tls_version=1.2,
-        #            tls_versions=[1.0, 1.1, 1.2],
-        #            target_security_type='unacceptable', ciphersuitelist=list)
-        #
-        # self.assertFalse('TLS1.0'in report)
-        # self.assertTrue('TLS1.2'in report)
-        # self.assertTrue('weak cipher suite TLS_RSA_WITH_AES_128_CBC_SHA' in report['TLS1.2'])
+        main(['duo.com', '--ciphersuitelist', ",".join(list), '--unacceptable', '--tls_versions', '1.2', '-V', '-VV'])
 
-    def test_google(self):
+    def test_multiple(self):
         f = io.StringIO()
 
         list = [
@@ -58,17 +51,17 @@ class MyTestCase(unittest.TestCase):
                 'TLS_RSA_WITH_AES_128_CBC_SHA',
                 'TLS_RSA_WITH_AES_128_CBC_SHA256',
                 'TLS_RSA_WITH_AES_128_GCM_SHA256',
-                'TLS_RSA_WITH_AES_256_CBC_SHA',
-                'TLS_RSA_WITH_AES_256_CBC_SHA256',
-                'TLS_RSA_WITH_AES_256_GCM_SHA384',
-                'TLS_RSA_WITH_3DES_EDE_CBC_SHA',
-                'TLS_RSA_WITH_AES_128_CBC_SHA',
-                'TLS_RSA_WITH_AES_128_CBC_SHA256',
-                'TLS_RSA_WITH_AES_128_GCM_SHA256',
-                'TLS_RSA_WITH_AES_256_CBC_SHA',
-                'TLS_RSA_WITH_AES_256_CBC_SHA256',
+                # 'TLS_RSA_WITH_AES_256_CBC_SHA',
+                # 'TLS_RSA_WITH_AES_256_CBC_SHA256',
+                # 'TLS_RSA_WITH_AES_256_GCM_SHA384',
+                # 'TLS_RSA_WITH_3DES_EDE_CBC_SHA',
+                # 'TLS_RSA_WITH_AES_128_CBC_SHA',
+                # 'TLS_RSA_WITH_AES_128_CBC_SHA256',
+                # 'TLS_RSA_WITH_AES_128_GCM_SHA256',
+                # 'TLS_RSA_WITH_AES_256_CBC_SHA',
+                # 'TLS_RSA_WITH_AES_256_CBC_SHA256',
                 ]
-        main(['www.google.com', '--ciphersuitelist', ",".join(list), '--unacceptable', '--tls_versions', '1.2', '-V'])
+        main(['hostlist.txt', '--ciphersuitelist', ",".join(list), '--unacceptable', '--tls_versions', '1.2', '-V'])
 
 
 if __name__ == '__main__':

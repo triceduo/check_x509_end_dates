@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from tqdm import tqdm
+import os.path
 import subprocess
 import argparse
 import os, sys
@@ -71,32 +73,83 @@ def cipher_suites_by_tls_version_security():
     return tls_versions
 
 
-def check_host(hostname, cipherinfo=None, min_tls_version=1.2, tls_versions=None,
+def check_host(hostname, cipherinfo=None, min_tls_version=1.2, tls_versions=None, progress=False,
                target_security_type='unacceptable', ciphersuitelist=None):
+    """
+    Check the host for various TLS versions and cipher suites.
+
+    Args:
+        hostname (str): The hostname of the server to check.
+        cipherinfo (dict, optional): A dictionary containing information about the supported cipher suites for each TLS version. If not provided, the function will fetch the information from the cipher_suites_by_tls_version_security() function.
+        min_tls_version (float, optional): The minimum TLS version to check. Defaults to 1.2.
+        tls_versions (list, optional): A list of TLS versions to check. If not provided, the function will check all available TLS versions.
+        target_security_type (str, optional): The target security type to check. Defaults to 'unacceptable' (i.e. weak or insecure cipher suites).
+        ciphersuitelist (list, optional): A list of cipher suites to check. If not provided, all cipher suites will be checked.
+
+    Returns:
+        dict: A dictionary containing the results of the check. The keys are the TLS versions and the values are lists of problem cipher suites
+    """
     report = {}
     if cipherinfo is None:
         cipherinfo = cipher_suites_by_tls_version_security()
+
+    if ciphersuitelist is not None and type(ciphersuitelist) is str:
+        ciphersuitelist = [line.strip() for line in ciphersuitelist.split(',')]
 
     if tls_versions is None:
         # check 'em all
         tls_versions = sorted([float(w.replace('TLS', '')) for w in cipherinfo.keys()])
 
+    if progress:
+        pbartlsversion = tqdm(total=len(tls_versions), desc=f"{hostname} {'TLS versions':20}", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
     for tls_version in tls_versions:
         if tls_version < min_tls_version:
             supported = check_tls_response(hostname, 443, tls_version)
             if supported:
-                report[f"TLS{tls_version}"] = f'support for TLS version {tls_version} should be disabled'
+                report[f"TLS{tls_version}"] = {
+                    'unacceptable': [f'support for TLS version {tls_version} should be disabled']}
+            else:
+                report[f"TLS{tls_version}"] = {
+                    'acceptable': [f'support for TLS version {tls_version} is correctly disabled']}
+            if progress:
+                pbartlsversion.update(1)
         else:
             for security_type in cipherinfo[f"TLS{tls_version}"]:
-                if security_type is None or security_type == target_security_type:
-                    for cipher_suite in cipherinfo[f"TLS{tls_version}"][security_type]:
-                        if ciphersuitelist is None or cipher_suite in ciphersuitelist:
-                            data = cipherinfo[f"TLS{tls_version}"][security_type][cipher_suite]
-                            supported = check_tls_response(hostname, 443, tls_version, cipher_suite=cipher_suite)
-                            if supported:
-                                if f"TLS{tls_version}" not in report:
-                                    report[f"TLS{tls_version}"] = []
-                                report[f"TLS{tls_version}"].append(f"{data['security']} cipher suite {cipher_suite}")
+                if target_security_type is None or security_type == target_security_type:
+                    cipherstocheck = set(cipherinfo[f"TLS{tls_version}"][security_type].keys())
+                    if ciphersuitelist is not None:
+                        cipherstocheck = cipherstocheck.intersection(set(ciphersuitelist))
+                        ciphersnotinthissecuritytype = set(ciphersuitelist).difference(cipherstocheck)
+                        # if len(ciphersnotinthissecuritytype) > 0:
+                        #     print(
+                        #         f"WARNING: cipher suite(s) {ciphersnotinthissecuritytype} not in security type {security_type} for TLS version {tls_version}")
+                    if f"TLS{tls_version}" not in report:
+                        report[f"TLS{tls_version}"] = {}
+                    if security_type not in report[f"TLS{tls_version}"]:
+                        report[f"TLS{tls_version}"][security_type] = []
+
+                    if len(cipherstocheck) > 0:
+                        if progress:
+                            if ciphersuitelist is None:
+                                ciphercnt = len(cipherinfo[f"TLS{tls_version}"][security_type])
+                            else:
+                                ciphercnt = len(ciphersuitelist)
+                            pbarciphers = tqdm(total=ciphercnt,
+                                        desc=f"{hostname} TLS{tls_version} cipher suites",
+                                        bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+                        for cipher_suite in cipherstocheck:
+                            if progress:
+                                pbarciphers.update(1)
+                            if ciphersuitelist is None or cipher_suite in ciphersuitelist:
+                                data = cipherinfo[f"TLS{tls_version}"][security_type][cipher_suite]
+                                supported = check_tls_response(hostname, 443, tls_version, cipher_suite=cipher_suite)
+                                report[f"TLS{tls_version}"][security_type].append(
+                                    f"{data['security']} cipher suite {cipher_suite} {'is' if supported else 'is not'} supported")
+                        pbarciphers.close()
+            if progress:
+                pbartlsversion.update(1)
+
+    pbartlsversion.close()
     return report
 
 
@@ -121,27 +174,50 @@ def check_tls_response(host, port, tls_version, cipher_suite=None):
     return result.returncode == 0
 
 
+def build_hostlist(hostnamestring):
+    """
+    Builds a list of hostnames from either a file or a single hostname.
+
+    Args:
+        hostnamestring (str): The file path or single hostname.
+
+    Returns:
+        list: A list of hostnames.
+
+    """
+    if os.path.isfile(hostnamestring):
+        with open(hostnamestring, 'r') as file:
+            lines = file.readlines()
+        hostnames = [line.strip() for line in lines]
+    else:
+        hostnames = [hostnamestring.strip()]
+    return hostnames
+
+
 def create_parser(arglist):
     parser = argparse.ArgumentParser(
         prog='TLS Check',
-        description='Checks TLS posture for given host or list of hosts. Primarily intended for port 443 but may be used for other ports',)
+        description='Checks TLS posture for given host or list of hosts. Primarily intended for port 443 but may be used for other ports', )
     parser.add_argument('-m', '--min_tls_version', type=float, default=1.2, help='Minimum TLS version to check')
     parser.add_argument('-c', '--csv', type=str, help='output report in CSV format to specified file')
     parser.add_argument('-u', '--unacceptable', action='store_true', default=True,
                         help='port on weak or insecure cipher suites')
-    parser.add_argument('-V', '--verbose', action='store_true', default=False, help='output report to console')
+    parser.add_argument('-VV', '--reallyverbose', action='store_true', default=False, help='output report to console')
+    parser.add_argument('-V', '--verbose', action='store_true', default=False, help='additional output to console')
     parser.add_argument('-l', '--ciphersuitelist', type=str, default=None, help='List of cipher suites to check')
     parser.add_argument('-v', '--tls_versions', type=str, default="1.0,1.1,1.2",
                         help='comma separated string of TLS versions to check')
-    parser.add_argument('hostname', type=str, help='comma separated list of hosts (or IP addresses) or filename with list of hosts (one per line)')
+    parser.add_argument('hostname', type=str,
+                        help='comma separated list of hosts (or IP addresses) or filename with list of hosts (one per line)')
     parser.add_argument('-p', '--port', type=int, default=443, help='port to check (default 4430)')
-    args= parser.parse_args(arglist)
+    args = parser.parse_args(arglist)
     if args.unacceptable:
         args.target_security_type = 'unacceptable'
     else:
         args.target_security_type = None
     if type(args.tls_versions) == str:
-        args.tls_versions = [float(x) for x in args.tls_versions.split(',')]
+        args.tls_version_list = [float(x) for x in args.tls_versions.split(',')]
+    args.hostnames = build_hostlist(args.hostname)
     return args
 
 
@@ -151,12 +227,21 @@ def main(arglist):
         args.target_security_type = 'unacceptable'
     else:
         args.target_security_type = None
-    if type(args.tls_versions) == str:
-        args.tls_versions = [float(x) for x in args.tls_versions.split(',')]
-    print(f"checking {args.hostname}:{args.port} with TLS versions {args.tls_versions} for ", end=' ')
-    report = check_host(args.hostname, min_tls_version=args.min_tls_version, tls_versions=args.tls_versions,
-                        target_security_type=args.target_security_type, ciphersuitelist=args.ciphersuitelist)
-    if  args.verbose:
+    hostlist = ", ".join(args.hostnames)
+    print(f'checking {hostlist} on port {args.port} with TLS versions {args.tls_version_list}')
+
+    if args.verbose:
+        pbar = tqdm(total=len(args.hostnames), desc=f"{'hosts':20}", bar_format='{l_bar}{bar:10}{r_bar}{bar:-10b}')
+
+    final_report = {}
+    for hostname in args.hostnames:
+        report = check_host(hostname, progress=args.verbose,
+                            min_tls_version=args.min_tls_version, tls_versions=args.tls_version_list,
+                            target_security_type=args.target_security_type, ciphersuitelist=args.ciphersuitelist)
+        if args.verbose:
+            pbar.update(1)
+
+    if args.reallyverbose:
         for tlsver, rows in report.items():
             print(f"\n{tlsver}")
             for row in rows:
