@@ -1,5 +1,7 @@
+#!/usr/bin/env python3
 import subprocess
-import os
+import argparse
+import os, sys
 import pickle
 import time
 import urllib.request
@@ -71,12 +73,12 @@ def cipher_suites_by_tls_version_security():
 
 def check_host(hostname, cipherinfo=None, min_tls_version=1.2, tls_versions=None,
                target_security_type='unacceptable', ciphersuitelist=None):
-    report={}
+    report = {}
     if cipherinfo is None:
         cipherinfo = cipher_suites_by_tls_version_security()
 
     if tls_versions is None:
-        #check 'em all
+        # check 'em all
         tls_versions = sorted([float(w.replace('TLS', '')) for w in cipherinfo.keys()])
 
     for tls_version in tls_versions:
@@ -89,12 +91,12 @@ def check_host(hostname, cipherinfo=None, min_tls_version=1.2, tls_versions=None
                 if security_type is None or security_type == target_security_type:
                     for cipher_suite in cipherinfo[f"TLS{tls_version}"][security_type]:
                         if ciphersuitelist is None or cipher_suite in ciphersuitelist:
-                            data =  cipherinfo[f"TLS{tls_version}"][security_type][cipher_suite]
+                            data = cipherinfo[f"TLS{tls_version}"][security_type][cipher_suite]
                             supported = check_tls_response(hostname, 443, tls_version, cipher_suite=cipher_suite)
                             if supported:
                                 if f"TLS{tls_version}" not in report:
                                     report[f"TLS{tls_version}"] = []
-                                report[ f"TLS{tls_version}"].append(f"{data['security']} cipher suite {cipher_suite}")
+                                report[f"TLS{tls_version}"].append(f"{data['security']} cipher suite {cipher_suite}")
     return report
 
 
@@ -114,14 +116,52 @@ def check_tls_response(host, port, tls_version, cipher_suite=None):
     tls_version_str = str(tls_version).replace(".", "_").replace('1_0', '1')
     command = ['openssl', 's_client', '-connect', f'{host}:{port}', f"-tls{tls_version_str}"]
     if cipher_suite is not None:
-        command+=['-cipher', cipher_suite]
+        command += ['-cipher', cipher_suite]
     result = subprocess.run(command, capture_output=True, text=True)
     return result.returncode == 0
 
-# # Example usage
-# host = 'duo.com'
-# port = 443
-# tls_version = '1.2'
-# cipher_suite = 'AES256-SHA'
-#
-# check_tls_support(host, port, tls_version, cipher_suite)
+
+def create_parser(arglist):
+    parser = argparse.ArgumentParser(
+        prog='TLS Check',
+        description='Checks TLS posture for given host or list of hosts. Primarily intended for port 443 but may be used for other ports',)
+    parser.add_argument('-m', '--min_tls_version', type=float, default=1.2, help='Minimum TLS version to check')
+    parser.add_argument('-c', '--csv', type=str, help='output report in CSV format to specified file')
+    parser.add_argument('-u', '--unacceptable', action='store_true', default=True,
+                        help='port on weak or insecure cipher suites')
+    parser.add_argument('-V', '--verbose', action='store_true', default=False, help='output report to console')
+    parser.add_argument('-l', '--ciphersuitelist', type=str, default=None, help='List of cipher suites to check')
+    parser.add_argument('-v', '--tls_versions', type=str, default="1.0,1.1,1.2",
+                        help='comma separated string of TLS versions to check')
+    parser.add_argument('hostname', type=str, help='comma separated list of hosts (or IP addresses) or filename with list of hosts (one per line)')
+    parser.add_argument('-p', '--port', type=int, default=443, help='port to check (default 4430)')
+    args= parser.parse_args(arglist)
+    if args.unacceptable:
+        args.target_security_type = 'unacceptable'
+    else:
+        args.target_security_type = None
+    if type(args.tls_versions) == str:
+        args.tls_versions = [float(x) for x in args.tls_versions.split(',')]
+    return args
+
+
+def main(arglist):
+    args = create_parser(arglist)
+    if args.unacceptable:
+        args.target_security_type = 'unacceptable'
+    else:
+        args.target_security_type = None
+    if type(args.tls_versions) == str:
+        args.tls_versions = [float(x) for x in args.tls_versions.split(',')]
+    print(f"checking {args.hostname}:{args.port} with TLS versions {args.tls_versions} for ", end=' ')
+    report = check_host(args.hostname, min_tls_version=args.min_tls_version, tls_versions=args.tls_versions,
+                        target_security_type=args.target_security_type, ciphersuitelist=args.ciphersuitelist)
+    if  args.verbose:
+        for tlsver, rows in report.items():
+            print(f"\n{tlsver}")
+            for row in rows:
+                print(f"  {row}")
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])
